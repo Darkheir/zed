@@ -66,16 +66,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Force point the git tag to our latest build and push it
+          # 1. Force point the git tag to our latest build and push it to your fork
           git tag -f nightly
           git push origin nightly --force
           
-          # 2. Delete the old GitHub release metadata (if it exists) so we can start fresh
-          # The '|| true' ensures that if it's Day 1 and no release exists yet, the script won't crash.
-          gh release delete nightly --yes || true
+          # 2. Delete the old release metadata from YOUR fork explicitly
+          gh release delete nightly --yes --repo "$GITHUB_REPOSITORY" || true
           
-          # 3. Create the new release and attach the freshly built binary cleanly
+          # 3. Create the new release on YOUR fork explicitly
           gh release create nightly target/release/zed-linux-x86_64.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Nightly Automated Build" \
             --notes "This rolling release updates automatically every night. Built from clean fix/git_sub_folder_as_project." \
             --prerelease
