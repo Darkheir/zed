@@ -1,0 +1,75 @@
+name: Nightly Sync, Rebase & Build (Clean PR)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  nightly-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git Author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync Main and Rebase Feature Branch
+        run: |
+          # 1. Add upstream and fetch the latest main
+          git remote add upstream https://github.com/zed-industries/zed.git
+          git fetch upstream main
+          
+          # 2. Force-update local 'main' to match upstream exactly, then push to your origin
+          git checkout -B main upstream/main
+          git push origin main --force
+          
+          # 3. Fetch your custom feature branch, check it out, and rebase it over main
+          git fetch origin my-feature-branch
+          git checkout -B my-feature-branch origin/my-feature-branch
+          git rebase main
+          
+          # 4. Force-push the clean, updated feature branch back to origin
+          git push origin my-feature-branch --force
+
+      # --- At this point, the runner is sitting on 'my-feature-branch' ---
+      # --- It will now compile the editor using YOUR custom code ---
+
+      - name: Install Linux Dependencies
+        run: |
+          ./script/linux
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Upstream Bundle Script
+        env:
+          RELEASE_VERSION: "0.0.0-custom-nightly"
+          REMOTE_SERVER_TARGET: x86_64-unknown-linux-gnu 
+        run: |
+          chmod +x ./script/bundle-linux
+          ./script/bundle-linux
+
+      - name: Publish Rolling Nightly Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create the tag on the feature branch commit we just built
+          git tag -f nightly
+          git push origin nightly --force
+          
+          gh release create nightly target/release/zed-linux-x86_64.tar.gz \
+            --title "Nightly Automated Build" \
+            --notes "This rolling release updates automatically every night. Built from clean my-feature-branch." \
+            --prerelease \
+            --clobber
