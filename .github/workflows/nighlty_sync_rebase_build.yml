@@ -35,15 +35,12 @@ jobs:
           git push origin main --force
           
           # 3. Fetch your custom feature branch, check it out, and rebase it over main
-          git fetch origin my-feature-branch
-          git checkout -B my-feature-branch origin/my-feature-branch
+          git fetch origin fix/git_sub_folder_as_project
+          git checkout -B fix/git_sub_folder_as_project origin/fix/git_sub_folder_as_project
           git rebase main
           
           # 4. Force-push the clean, updated feature branch back to origin
-          git push origin my-feature-branch --force
-
-      # --- At this point, the runner is sitting on 'my-feature-branch' ---
-      # --- It will now compile the editor using YOUR custom code ---
+          git push origin fix/git_sub_folder_as_project --force
 
       - name: Install Linux Dependencies
         run: |
@@ -70,6 +67,6 @@ jobs:
           
           gh release create nightly target/release/zed-linux-x86_64.tar.gz \
             --title "Nightly Automated Build" \
-            --notes "This rolling release updates automatically every night. Built from clean my-feature-branch." \
+            --notes "This rolling release updates automatically every night. Built from clean fix/git_sub_folder_as_project." \
             --prerelease \
             --clobber
