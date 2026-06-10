@@ -35,12 +35,12 @@ jobs:
           git push origin main --force
           
           # 3. Fetch your custom feature branch, check it out, and rebase it over main
-          git fetch origin fix/git_sub_folder_as_project
-          git checkout -B fix/git_sub_folder_as_project origin/fix/git_sub_folder_as_project
+          git fetch origin zed_local_fixes
+          git checkout -B zed_local_fixes origin/zed_local_fixes
           git rebase main
           
           # 4. Force-push the clean, updated feature branch back to origin
-          git push origin fix/git_sub_folder_as_project --force
+          git push origin zed_local_fixes --force
 
       - name: Install Linux Dependencies
         run: |
@@ -77,5 +77,5 @@ jobs:
           gh release create nightly target/release/zed-linux-x86_64.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
             --title "Nightly Automated Build" \
-            --notes "This rolling release updates automatically every night. Built from clean fix/git_sub_folder_as_project." \
+            --notes "This rolling release updates automatically every night. Built from clean zed_local_fixes." \
             --prerelease
