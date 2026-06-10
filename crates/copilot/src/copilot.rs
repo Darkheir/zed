@@ -488,6 +488,26 @@ impl Copilot {
         cx.notify();
     }
 
+    /// Attach a project to this Copilot instance so that file-focus changes in the
+    /// project are forwarded to the language server via `textDocument/didFocus`.
+    /// The subscription is stored in `_subscriptions` and becomes a no-op once the
+    /// project entity is released.
+    pub fn attach_project(&mut self, project: Entity<Project>, cx: &mut Context<Self>) {
+        let subscription = cx.subscribe(&project, |this, project, e: &project::Event, cx| {
+            if let project::Event::ActiveEntryChanged(new_entry) = e
+                && let Ok(running) = this.server.as_authenticated()
+            {
+                let uri = new_entry
+                    .and_then(|id| project.read(cx).path_for_entry(id, cx))
+                    .and_then(|entry| project.read(cx).absolute_path(&entry, cx))
+                    .and_then(|abs_path| lsp::Uri::from_file_path(abs_path).ok());
+
+                _ = running.lsp.notify::<DidFocus>(DidFocusParams { uri });
+            }
+        });
+        self._subscriptions.push(subscription);
+    }
+
     fn build_env(&self, copilot_settings: &CopilotSettings) -> Option<HashMap<String, String>> {
         let proxy_url = copilot_settings.proxy.clone()?;
         let no_verify = copilot_settings.proxy_no_verify;
