@@ -2948,7 +2948,10 @@ impl ConversationView {
 
         match settings.notify_when_agent_waiting {
             NotifyWhenAgentWaiting::PrimaryScreen => {
-                if let Some(primary) = cx.primary_display() {
+                if let Some(screen) = cx
+                    .primary_display()
+                    .or_else(|| cx.displays().into_iter().next())
+                {
                     self.pop_up(
                         icon,
                         caption.into(),
@@ -2957,7 +2960,7 @@ impl ConversationView {
                         root_work_dirs,
                         root_title,
                         window,
-                        primary,
+                        screen,
                         cx,
                     );
                 }
