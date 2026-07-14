@@ -935,6 +935,20 @@ impl WaylandWindowStatePtr {
         Rc::ptr_eq(&self.state, &other.state)
     }
 
+    /// The display this window is currently on, if known. Wayland surfaces can
+    /// span multiple outputs; this returns the one chosen as primary for scaling.
+    pub fn display(&self) -> Option<Rc<dyn PlatformDisplay>> {
+        let state = self.state.borrow();
+        state.display.as_ref().map(|(id, output)| {
+            Rc::new(WaylandDisplay {
+                id: id.clone(),
+                name: output.name.clone(),
+                bounds: output.bounds.to_pixels(state.scale),
+                refresh_interval: output.refresh_interval,
+            }) as Rc<dyn PlatformDisplay>
+        })
+    }
+
     pub fn add_child(&self, child: ObjectId, blocking: bool) {
         let mut state = self.state.borrow_mut();
         state.children.insert(child, blocking);
