@@ -702,6 +702,27 @@ impl WaylandClientStatePtr {
             Some(PendingActivation::Window(window));
     }
 
+    /// Compositors such as Mutter only honor an activation token whose surface holds the
+    /// pointer or keyboard focus that produced the token's serial. When a different window
+    /// (e.g. a notification pop-up) triggered the activation, the token must reference that
+    /// window's surface rather than the window being activated.
+    pub fn activation_source(&self) -> Option<(wl_surface::WlSurface, Serial)> {
+        let client = self.get_client();
+        let state = client.borrow();
+        if let Some(window) = &state.mouse_focused_window {
+            return Some((
+                window.surface(),
+                state.serial_tracker.get(SerialKind::MousePress),
+            ));
+        }
+        state.keyboard_focused_window.as_ref().map(|window| {
+            (
+                window.surface(),
+                state.serial_tracker.get(SerialKind::KeyPress),
+            )
+        })
+    }
+
     pub fn enable_ime(&self) {
         let client = self.get_client();
         let mut state = client.borrow_mut();
@@ -1254,7 +1275,29 @@ impl WaylandConnection {
     }
 
     pub(crate) fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
-        None
+        let state = self.0.borrow();
+        // Wayland has no notion of a "primary" output, so prefer the display the
+        // currently focused window is on, falling back to the output with the
+        // lowest id so the choice is stable across calls.
+        if let Some(display) = state
+            .keyboard_focused_window
+            .as_ref()
+            .and_then(|window| window.display())
+        {
+            return Some(display);
+        }
+        state
+            .outputs
+            .iter()
+            .min_by_key(|(id, _)| id.protocol_id())
+            .map(|(id, output)| {
+                Rc::new(WaylandDisplay {
+                    id: id.clone(),
+                    name: output.name.clone(),
+                    bounds: output.bounds.to_pixels(output.scale as f32),
+                    refresh_interval: output.refresh_interval,
+                }) as Rc<dyn PlatformDisplay>
+            })
     }
 
     #[cfg(feature = "screen-capture")]

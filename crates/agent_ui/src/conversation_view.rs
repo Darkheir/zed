@@ -3570,6 +3570,9 @@ impl ConversationView {
                                 return;
                             };
                             cx.activate(true);
+                            // Activate while the clicked pop-up still exists: on Wayland the
+                            // activation request must reference the surface that received the click.
+                            window.activate_window();
 
                             let workspace_handle = this.workspace.clone();
                             let agent = this.connection_key.clone();
@@ -3579,7 +3582,6 @@ impl ConversationView {
                             cx.defer(move |cx| {
                                 handle
                                     .update(cx, |multi_workspace, window, cx| {
-                                        window.activate_window();
                                         if let Some(workspace) = workspace_handle.upgrade() {
                                             multi_workspace.activate(
                                                 workspace.clone(),

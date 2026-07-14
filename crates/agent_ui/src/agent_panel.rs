@@ -2741,13 +2741,14 @@ impl AgentPanel {
                         return;
                     };
                     cx.activate(true);
+                    // Activate while the clicked pop-up still exists: on Wayland the
+                    // activation request must reference the surface that received the click.
+                    window.activate_window();
 
                     let workspace = this.workspace.clone();
                     cx.defer(move |cx| {
                         handle
                             .update(cx, |multi_workspace, window, cx| {
-                                window.activate_window();
-
                                 let Some(workspace) = workspace.upgrade() else {
                                     return;
                                 };

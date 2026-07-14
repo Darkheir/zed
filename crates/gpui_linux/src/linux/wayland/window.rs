@@ -925,6 +925,20 @@ impl WaylandWindowStatePtr {
         Rc::ptr_eq(&self.state, &other.state)
     }
 
+    /// The display this window is currently on, if known. Wayland surfaces can
+    /// span multiple outputs; this returns the one chosen as primary for scaling.
+    pub fn display(&self) -> Option<Rc<dyn PlatformDisplay>> {
+        let state = self.state.borrow();
+        state.display.as_ref().map(|(id, output)| {
+            Rc::new(WaylandDisplay {
+                id: id.clone(),
+                name: output.name.clone(),
+                bounds: output.bounds.to_pixels(state.scale),
+                refresh_interval: output.refresh_interval,
+            }) as Rc<dyn PlatformDisplay>
+        })
+    }
+
     pub fn add_child(&self, child: ObjectId, blocking: bool) {
         let mut state = self.state.borrow_mut();
         state.children.insert(child, blocking);
@@ -1857,18 +1871,22 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn activate(&self) {
-        // Try to request an activation token. Even though the activation is likely going to be rejected,
+        // Try to request an activation token. If the activation is rejected,
         // KWin and Mutter can use the app_id to visually indicate we're requesting attention.
         let state = self.borrow();
         if let (Some(activation), Some(app_id)) = (&state.globals.activation, state.app_id.clone())
         {
             state.client.set_pending_activation(state.surface.id());
+            let (source_surface, serial) = state.client.activation_source().unwrap_or_else(|| {
+                (
+                    state.surface.clone(),
+                    state.client.get_serial(SerialKind::MousePress),
+                )
+            });
             let token = activation.get_activation_token(&state.globals.qh, ());
-            // The serial isn't exactly important here, since the activation is probably going to be rejected anyway.
-            let serial = state.client.get_serial(SerialKind::MousePress);
             token.set_app_id(app_id);
             token.set_serial(serial.as_raw(), &state.globals.seat);
-            token.set_surface(&state.surface);
+            token.set_surface(&source_surface);
             token.commit();
         }
     }
