@@ -2660,11 +2660,13 @@ impl AgentPanel {
         let settings = AgentSettings::get_global(cx);
         match settings.notify_when_agent_waiting {
             NotifyWhenAgentWaiting::PrimaryScreen => {
+                window.request_attention();
                 if let Some(primary) = cx.primary_display() {
                     self.pop_up_terminal_notification(terminal_id, &title, primary, window, cx);
                 }
             }
             NotifyWhenAgentWaiting::AllScreens => {
+                window.request_attention();
                 for screen in cx.displays() {
                     self.pop_up_terminal_notification(terminal_id, &title, screen, window, cx);
                 }
@@ -6485,7 +6487,6 @@ impl Render for AgentPanel {
                         .and_then(|terminal_id| self.terminals.get(&terminal_id))
                         .and_then(|terminal| terminal.search_bar.clone());
                     let terminal_content = v_flex()
-                        .key_context("AgentTerminalThread")
                         .size_full()
                         .when_some(search_bar, |this, search_bar| {
                             this.when(!search_bar.read(cx).is_dismissed(), |this| {
