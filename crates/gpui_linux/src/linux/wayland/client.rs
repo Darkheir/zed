@@ -891,7 +891,28 @@ impl LinuxClient for WaylandClient {
     }
 
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
-        None
+        let state = self.0.borrow();
+        // Wayland has no notion of a "primary" output, so prefer the display the
+        // currently focused window is on, falling back to the output with the
+        // lowest id so the choice is stable across calls.
+        if let Some(display) = state
+            .keyboard_focused_window
+            .as_ref()
+            .and_then(|window| window.display())
+        {
+            return Some(display);
+        }
+        state
+            .outputs
+            .iter()
+            .min_by_key(|(id, _)| id.protocol_id())
+            .map(|(id, output)| {
+                Rc::new(WaylandDisplay {
+                    id: id.clone(),
+                    name: output.name.clone(),
+                    bounds: output.bounds.to_pixels(output.scale as f32),
+                }) as Rc<dyn PlatformDisplay>
+            })
     }
 
     #[cfg(feature = "screen-capture")]
