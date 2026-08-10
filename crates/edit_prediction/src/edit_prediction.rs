@@ -21,7 +21,7 @@ use cloud_llm_client::{
     ZED_VERSION_HEADER_NAME,
 };
 use collections::{HashMap, HashSet};
-use copilot::{Copilot, GlobalCopilotAuth, Reinstall, SignIn, SignOut};
+use copilot::{Copilot, GlobalCopilotAuth, Reinstall};
 use credentials_provider::CredentialsProvider;
 use db::kvp::{Dismissable, KeyValueStore};
 use edit_prediction_context::{RelatedExcerptStore, RelatedExcerptStoreEvent, RelatedFile};
