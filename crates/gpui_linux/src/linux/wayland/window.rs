@@ -934,6 +934,7 @@ impl WaylandWindowStatePtr {
                 id: id.clone(),
                 name: output.name.clone(),
                 bounds: output.bounds.to_pixels(state.scale),
+                refresh_interval: output.refresh_interval,
             }) as Rc<dyn PlatformDisplay>
         })
     }
