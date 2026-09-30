@@ -767,9 +767,11 @@ mod test_support {
         sessions: Arc<Mutex<HashMap<acp_v1::SessionId, Session>>>,
         permission_requests: HashMap<acp_v1::ToolCallId, PermissionOptions>,
         next_prompt_updates: Arc<Mutex<Vec<acp_v1::SessionUpdate>>>,
+        next_prompt_response: Arc<Mutex<Option<oneshot::Receiver<Result<acp_v1::PromptResponse>>>>>,
         next_truncate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
         supports_load_session: bool,
         supports_session_additional_directories: bool,
+        supports_set_title: bool,
         agent_id: AgentId,
         telemetry_id: SharedString,
     }
@@ -789,11 +791,13 @@ mod test_support {
         pub fn new() -> Self {
             Self {
                 next_prompt_updates: Default::default(),
+                next_prompt_response: Default::default(),
                 next_truncate: Default::default(),
                 permission_requests: HashMap::default(),
                 sessions: Arc::default(),
                 supports_load_session: false,
                 supports_session_additional_directories: false,
+                supports_set_title: true,
                 agent_id: AgentId::new("stub"),
                 telemetry_id: "stub".into(),
             }
@@ -801,6 +805,14 @@ mod test_support {
 
         pub fn set_next_prompt_updates(&self, updates: Vec<acp_v1::SessionUpdate>) {
             *self.next_prompt_updates.lock() = updates;
+        }
+
+        pub fn defer_next_prompt_response(
+            &self,
+        ) -> oneshot::Sender<Result<acp_v1::PromptResponse>> {
+            let (sender, receiver) = oneshot::channel();
+            assert!(self.next_prompt_response.lock().replace(receiver).is_none());
+            sender
         }
 
         pub fn defer_next_truncate(&self) -> oneshot::Sender<()> {
@@ -827,6 +839,11 @@ mod test_support {
             supports_session_additional_directories: bool,
         ) -> Self {
             self.supports_session_additional_directories = supports_session_additional_directories;
+            self
+        }
+
+        pub fn with_supports_set_title(mut self, supports_set_title: bool) -> Self {
+            self.supports_set_title = supports_set_title;
             self
         }
 
@@ -986,7 +1003,9 @@ mod test_support {
                 response_tx,
             } = sessions.get_mut(&params.session_id).unwrap();
             let mut tasks = vec![];
-            if self.next_prompt_updates.lock().is_empty() {
+            if let Some(receiver) = self.next_prompt_response.lock().take() {
+                cx.spawn(async move |_| receiver.await?)
+            } else if self.next_prompt_updates.lock().is_empty() {
                 let (tx, rx) = oneshot::channel();
                 response_tx.replace(tx);
                 cx.spawn(async move |_| {
@@ -1060,7 +1079,8 @@ mod test_support {
             _session_id: &acp_v1::SessionId,
             _cx: &App,
         ) -> Option<Rc<dyn AgentSessionSetTitle>> {
-            Some(Rc::new(StubAgentSessionSetTitle))
+            self.supports_set_title
+                .then(|| Rc::new(StubAgentSessionSetTitle) as _)
         }
 
         fn truncate(
