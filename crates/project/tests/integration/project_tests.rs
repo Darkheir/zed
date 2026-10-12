@@ -18692,6 +18692,73 @@ async fn test_repository_subfolder_git_status(
     });
 }
 
+#[gpui::test]
+async fn test_rescan_repositories_above_worktrees(
+    executor: gpui::BackgroundExecutor,
+    cx: &mut gpui::TestAppContext,
+) {
+    init_test(cx);
+
+    let fs = FakeFs::new(executor);
+    fs.insert_tree(
+        path!("/root/my-repo"),
+        json!({
+            ".git": {},
+            "opened": {
+                "a.txt": "a",
+            },
+            "outside": {
+                "b.txt": "b",
+            },
+        }),
+    )
+    .await;
+    fs.set_status_for_repo(path!("/root/my-repo/.git").as_ref(), &[]);
+
+    let project = Project::test(fs.clone(), [path!("/root/my-repo/opened").as_ref()], cx).await;
+    project
+        .update(cx, |project, cx| project.git_scans_complete(cx))
+        .await;
+    cx.run_until_parked();
+
+    let repository = project.read_with(cx, |project, cx| {
+        project.repositories(cx).values().next().unwrap().clone()
+    });
+
+    fs.write(
+        path!("/root/my-repo/outside/c.txt").as_ref(),
+        "c".as_bytes(),
+    )
+    .await
+    .unwrap();
+    cx.run_until_parked();
+
+    // Paths outside the opened folder aren't watched, so the change is not seen yet.
+    repository.read_with(cx, |repository, _cx| {
+        assert_eq!(
+            repository.status_for_path(&repo_path("outside/c.txt")),
+            None
+        );
+    });
+
+    project.update(cx, |project, cx| {
+        project.git_store().update(cx, |git_store, cx| {
+            git_store.rescan_repositories_above_worktrees(cx)
+        })
+    });
+    cx.run_until_parked();
+
+    repository.read_with(cx, |repository, _cx| {
+        assert_eq!(
+            repository
+                .status_for_path(&repo_path("outside/c.txt"))
+                .unwrap()
+                .status,
+            FileStatus::Untracked
+        );
+    });
+}
+
 // TODO: this test is flaky (especially on Windows but at least sometimes on all platforms).
 #[cfg(any())]
 #[gpui::test]

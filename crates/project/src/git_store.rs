@@ -1268,6 +1268,36 @@ impl GitStore {
             .map(|id| self.repositories[id].clone())
     }
 
+    /// Reloads the full status of repositories whose root is above an opened
+    /// folder. Files outside the opened folders aren't watched, so changes made
+    /// there by other processes (e.g. an agent) are otherwise only picked up
+    /// once something changes in the `.git` directory.
+    pub fn rescan_repositories_above_worktrees(&mut self, cx: &mut Context<Self>) {
+        let GitStoreState::Local { downstream, .. } = &self.state else {
+            return;
+        };
+        let updates_tx = downstream
+            .as_ref()
+            .map(|downstream| downstream.updates_tx.clone());
+        let worktree_roots = self
+            .worktree_store
+            .read(cx)
+            .visible_worktrees(cx)
+            .map(|worktree| worktree.read(cx).abs_path())
+            .collect::<Vec<_>>();
+        for repository in self.repositories.values() {
+            repository.update(cx, |repository, cx| {
+                let work_directory = &repository.work_directory_abs_path;
+                let is_above_worktree = worktree_roots
+                    .iter()
+                    .any(|root| root != work_directory && root.starts_with(work_directory));
+                if is_above_worktree {
+                    repository.schedule_scan(updates_tx.clone(), cx);
+                }
+            });
+        }
+    }
+
     fn file_is_symlink(file: &File, cx: &App) -> bool {
         file.worktree
             .read(cx)
