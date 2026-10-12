@@ -4072,6 +4072,14 @@ impl AcpThread {
                     }
                     this.update_idle_sleep_prevention(cx);
                 }
+                AcpThreadEvent::Stopped { .. } => {
+                    if this.parent_session_id.is_none() {
+                        let git_store = this.project.read(cx).git_store().clone();
+                        git_store.update(cx, |git_store, cx| {
+                            git_store.rescan_repositories_above_worktrees(cx)
+                        });
+                    }
+                }
                 AcpThreadEvent::PromptUpdated
                 | AcpThreadEvent::ActivityConfirmedIdle
                 | AcpThreadEvent::SubmissionUpdated(_)
@@ -4083,7 +4091,6 @@ impl AcpThread {
                 | AcpThreadEvent::Retry(_)
                 | AcpThreadEvent::SubagentSpawned(_)
                 | AcpThreadEvent::SubagentAssociationUpdated
-                | AcpThreadEvent::Stopped { .. }
                 | AcpThreadEvent::Error
                 | AcpThreadEvent::ConnectionLost
                 | AcpThreadEvent::LoadError(_)
