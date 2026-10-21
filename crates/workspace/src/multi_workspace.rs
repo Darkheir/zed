@@ -963,9 +963,18 @@ impl MultiWorkspace {
 
         let workspaces = self.workspaces_for_project_group(group_key, cx);
 
-        let task = self.remove(workspaces, RemovalIntent::CloseProject, window, cx);
+        // Groups restored from a previous session have no loaded workspace
+        // until they are opened. With nothing to prompt about, `remove` would
+        // bail out early and leave the row in place, so delete it directly.
+        if workspaces.is_empty() {
+            self.project_groups.retain(|group| group.key != *group_key);
+            cx.emit(MultiWorkspaceEvent::ProjectGroupsChanged);
+            self.serialize(cx);
+            cx.notify();
+            return Task::ready(Ok(true));
+        }
 
-        task
+        self.remove(workspaces, RemovalIntent::CloseProject, window, cx)
     }
 
     /// Returns the nearest retained workspace outside the project group at
