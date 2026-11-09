@@ -2261,6 +2261,53 @@ mod tests {
     }
 
     #[gpui::test]
+    async fn test_includes_files_outside_of_project_when_repo_is_above(cx: &mut TestAppContext) {
+        init_test(cx);
+
+        let fs = FakeFs::new(cx.executor());
+        fs.insert_tree(
+            path!("/repo"),
+            json!({
+                ".git": {},
+                "outside.txt": "outside new\n",
+                "project": { "inside.txt": "inside new\n" },
+            }),
+        )
+        .await;
+        fs.set_head_and_index_for_repo(
+            path!("/repo/.git").as_ref(),
+            &[
+                ("outside.txt", "outside old\n".into()),
+                ("deleted.txt", "deleted old\n".into()),
+                ("project/inside.txt", "inside old\n".into()),
+            ],
+        );
+
+        let project = Project::test(fs.clone(), [path!("/repo/project").as_ref()], cx).await;
+        let (multi_workspace, cx) =
+            cx.add_window_view(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
+        let workspace = multi_workspace.read_with(cx, |mw, _| mw.workspace().clone());
+        let diff = cx.new_window_entity(|window, cx| {
+            ProjectDiff::new(project.clone(), workspace, window, cx)
+        });
+        cx.run_until_parked();
+
+        let editor = diff.read_with(cx, |diff, cx| diff.editor(cx).read(cx).rhs_editor().clone());
+        let text = editor.update(cx, |editor, cx| {
+            editor.buffer().read(cx).snapshot(cx).text()
+        });
+        for expected in ["deleted old", "inside new", "outside new"] {
+            assert!(
+                text.contains(expected),
+                "expected {expected:?} in project diff, got:\n{text}"
+            );
+        }
+        let visible_worktree_count =
+            project.read_with(cx, |project, cx| project.visible_worktrees(cx).count());
+        assert_eq!(visible_worktree_count, 1);
+    }
+
+    #[gpui::test]
     async fn test_tree_view_orders_directories_before_files(cx: &mut TestAppContext) {
         init_test(cx);
 
