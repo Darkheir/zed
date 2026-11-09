@@ -14,10 +14,11 @@ use language::Buffer;
 use sum_tree::SumTree;
 use text::BufferId;
 use util::ResultExt;
+use worktree::Worktree;
 use ztracing::instrument;
 
 use crate::{
-    ConflictSet,
+    ConflictSet, ProjectPath,
     git_store::{
         GitStore, GitStoreEvent, Repository, RepositoryEvent, RepositorySnapshot, StatusEntry,
     },
@@ -340,7 +341,8 @@ impl DiffBufferList {
         {
             let mut seen = HashSet::default();
 
-            for item in repo.read(cx).cached_status() {
+            let repo_snapshot = repo.read(cx).snapshot.clone();
+            for item in repo_snapshot.status() {
                 let status = match self.diff_base {
                     DiffBase::Head => Some(item.status),
                     DiffBase::Index => item.status.staging().has_unstaged().then_some(item.status),
@@ -359,7 +361,7 @@ impl DiffBufferList {
                 seen.insert(item.repo_path.clone());
 
                 let Some(project_path) =
-                    repo.read(cx).repo_path_to_project_path(&item.repo_path, cx)
+                    Self::resolve_project_path(&repo, &git_store, &item.repo_path, cx)
                 else {
                     continue;
                 };
@@ -393,7 +395,8 @@ impl DiffBufferList {
                     continue;
                 }
 
-                let Some(project_path) = repo.read(cx).repo_path_to_project_path(path, cx) else {
+                let Some(project_path) = Self::resolve_project_path(&repo, &git_store, path, cx)
+                else {
                     continue;
                 };
                 let task = Self::load_buffer(
@@ -416,11 +419,40 @@ impl DiffBufferList {
         output
     }
 
+    /// Files of the repository that are outside of every worktree (e.g. when
+    /// the opened folder is a subdirectory of the repository) are opened through
+    /// an invisible worktree, so that the diff lists the same files as the Git
+    /// panel.
+    fn resolve_project_path(
+        repo: &Entity<Repository>,
+        git_store: &Entity<GitStore>,
+        repo_path: &RepoPath,
+        cx: &mut Context<Self>,
+    ) -> Option<Task<Result<(ProjectPath, Option<Entity<Worktree>>)>>> {
+        if let Some(project_path) = repo.read(cx).repo_path_to_project_path(repo_path, cx) {
+            return Some(Task::ready(Ok((project_path, None))));
+        }
+        // Collaborators can't create worktrees on the host.
+        if !git_store.read(cx).is_local() {
+            return None;
+        }
+        let abs_path = repo.read(cx).repo_path_to_abs_path(repo_path);
+        let worktree_store = git_store.read(cx).worktree_store.clone();
+        let create_worktree = worktree_store.update(cx, |worktree_store, cx| {
+            worktree_store.find_or_create_worktree(abs_path, false, cx)
+        });
+        Some(cx.spawn(async move |_, cx| {
+            let (worktree, path) = create_worktree.await?;
+            let worktree_id = worktree.read_with(cx, |worktree, _| worktree.id());
+            Ok((ProjectPath { worktree_id, path }, Some(worktree)))
+        }))
+    }
+
     #[instrument(skip_all)]
     fn load_buffer(
         diff_base: DiffBase,
         branch_diff: Option<git::status::TreeDiffStatus>,
-        project_path: crate::ProjectPath,
+        project_path: Task<Result<(ProjectPath, Option<Entity<Worktree>>)>>,
         repo: Entity<Repository>,
         git_store: Entity<GitStore>,
         cx: &Context<Self>,
@@ -428,6 +460,9 @@ impl DiffBufferList {
         let mut cx = cx.to_async();
         async move {
             let cx = &mut cx;
+            // Invisible worktrees are only weakly held by the worktree store, so the
+            // handle must outlive the buffer opening.
+            let (project_path, _invisible_worktree) = project_path.await?;
             let buffer = git_store
                 .update(cx, |git_store, cx| {
                     git_store.buffer_store.update(cx, |buffer_store, cx| {
